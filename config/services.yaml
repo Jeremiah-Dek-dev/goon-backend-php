@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+parameters:
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+        bind:
+            string $paystackSecretKey: '%env(PAYSTACK_SECRET_KEY)%'
+            string $frontendUrl: '%env(FRONTEND_URL)%'
+            string $refreshTokenSecret: '%env(REFRESH_TOKEN_SECRET)%'
+            
+            #string $mercurePublicUrl: '%env(MERCURE_PUBLIC_URL)%'
+    App\:
+        resource: '../src/'
