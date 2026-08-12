@@ -1,6 +1,11 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 
 parameters:
+    system_admin.email: '%env(SYSTEM_ADMIN_EMAIL)%'
+    system_admin.password: '%env(SYSTEM_ADMIN_PASSWORD)%'
+    system_admin.name: '%env(SYSTEM_ADMIN_NAME)%'
+    frontendUrl: '%env(FRONTEND_URL)%'
+    google_maps_api_key: '%env(GOOGLE_MAPS_API_KEY)%'
 
 services:
     _defaults:
@@ -11,7 +16,27 @@ services:
             string $paystackSecretKey: '%env(PAYSTACK_SECRET_KEY)%'
             string $frontendUrl: '%env(FRONTEND_URL)%'
             string $refreshTokenSecret: '%env(REFRESH_TOKEN_SECRET)%'
-            
+            string $logo: '%env(LOGO)%'
+            string $fromAddress: '%env(MAILER_FROM)%'
+            string $fromEmail: '%env(MAILER_FROM)%'
             #string $mercurePublicUrl: '%env(MERCURE_PUBLIC_URL)%'
     App\:
         resource: '../src/'
+
+
+
+    Predis\Client:
+        arguments:
+            - '%env(REDIS_URL)%'
+
+    App\Service\CaptchaService:
+        arguments:
+            $redis: '@Predis\Client'
+
+    App\Service\FileUploadService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+
+    App\Service\GoogleMapsService:
+        arguments:
+            $googleMapsApiKey: '%google_maps_api_key%'

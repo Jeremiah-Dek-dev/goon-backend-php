@@ -15,4 +15,19 @@ class RatingRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Rating::class);
     }
+
+
+    public function findByRideAndRater(
+    int $rideId,
+    int $raterId
+): ?Rating {
+    return $this->createQueryBuilder('r')
+        ->andWhere('IDENTITY(r.ride) = :rideId')
+        ->andWhere('IDENTITY(r.rater) = :raterId')
+        ->setParameter('rideId', $rideId)
+        ->setParameter('raterId', $raterId)
+        ->setMaxResults(1)
+        ->getQuery()
+        ->getOneOrNullResult();
+}
 }

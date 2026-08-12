@@ -1,0 +1,114 @@
+The important part:
+
+```bash
+pkill -f php-fpm
+pkill: killing pid 6537 failed: Operation not permitted
+```
+
+This means **PHP-FPM is running as another user (probably root)**, so your user cannot restart/kill it. Your Symfony CLI is using that PHP-FPM process, and that is likely why the old class reference is still appearing.
+
+Now do this:
+
+---
+
+### 1. Restart PHP-FPM properly
+
+Run:
+
+```bash
+sudo systemctl restart php8.4-fpm
+```
+
+You should see no error.
+
+Verify:
+
+```bash
+sudo systemctl status php8.4-fpm
+```
+
+It should show:
+
+```
+Active: active (running)
+```
+
+---
+
+### 2. Restart Symfony server
+
+Run:
+
+```bash
+symfony server:stop
+```
+
+Then:
+
+```bash
+symfony server:start
+```
+
+Keep this terminal open.
+
+---
+
+### 3. Trigger a fresh request
+
+Call:
+
+```
+GET http://127.0.0.1:8000/api/user/me
+```
+
+Then immediately:
+
+```bash
+cat var/log/dev.log
+```
+
+---
+
+### 4. If the same error appears, let's inspect the actual runtime file
+
+Run:
+
+```bash
+php -r "
+require 'vendor/autoload.php';
+\$r = new ReflectionClass('App\Security\CookieJwtAuthenticator');
+echo \$r->getFileName().PHP_EOL;
+"
+```
+
+Send me the output.
+
+---
+
+Also run:
+
+```bash
+grep -n "UserBadge" src/Security/CookieJwtAuthenticator.php
+```
+
+We expect:
+
+```php
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+
+new UserBadge(
+```
+
+---
+
+One more observation: your error timestamps:
+
+```
+10:58
+13:13
+13:18
+```
+
+are all **before** you cleared the log. So right now we don't actually have proof the error still exists after your fix.
+
+The next fresh `dev.log` after restarting PHP-FPM will tell us the truth.

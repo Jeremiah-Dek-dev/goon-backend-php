@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>GoOn Admin Invitation</title>
+</head>
+
+<body>
+    <h2>You're invited to GoOn Admin</h2>
+
+    {% if name %}
+        <p>Hello {{ name }},</p>
+    {% else %}
+        <p>Hello,</p>
+    {% endif %}
+
+    <p>
+        You have been invited to create an administrator account
+        for GoOn.
+    </p>
+
+    <p>
+        This invitation expires on:
+        <strong>{{ expires_at }} UTC</strong>
+    </p>
+
+    <p>
+        <a href="{{ invite_link }}">
+            Accept Admin Invitation
+        </a>
+    </p>
+
+    <p>
+        If you did not expect this invitation, you can safely ignore
+        this email.
+    </p>
+</body>
+</html>

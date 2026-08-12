@@ -91,13 +91,6 @@ class UserService
 
 
 
-        /**
-         * Create OTP
-         */
-        $this->createOTP($user);
-
-
-
         $this->entityManager->flush();
 
 
@@ -133,16 +126,6 @@ class UserService
                 "Account not found"
             );
         }
-
-
-
-        if (!$user->isVerified()) {
-
-            throw new \RuntimeException(
-                "Please verify your email first"
-            );
-        }
-
 
 
 
@@ -337,69 +320,188 @@ class UserService
 
 
 
+public function requestPasswordReset(string $email): array
+{
+    $email = strtolower(trim($email));
 
+    $user = $this->userRepository->findOneBy([
+        'email' => $email,
+    ]);
 
-    /**
-     * Generate password reset token.
+    /*
+     * Do not reveal whether the account exists.
      */
-    public function createPasswordResetToken(
-        User $user
-    ): string {
-
-
-        $token =
-            bin2hex(
-                random_bytes(32)
-            );
-
-
-        $user
-            ->setResetToken($token)
-            ->setResetTokenExpires(
-                new \DateTimeImmutable(
-                    '+1 hour'
-                )
-            );
-
-
-
-        $this->entityManager->flush();
-
-
-
-        return $token;
+    if (!$user) {
+        return [
+            'sent' => false,
+        ];
     }
 
-
-
-
-
-
-
-    /**
-     * Reset password.
+    /*
+     * Make sure this is an eligible user/admin account.
      */
-    public function resetPassword(
-        User $user,
-        string $password
-    ): void {
+    $allowedRoles = [
+        UserRole::USER,
+        UserRole::ADMIN,
+    ];
 
+    $isEligible = false;
 
-        $user
-            ->setPassword(
-                $this->passwordHasher->hashPassword(
-                    $user,
-                    $password
-                )
-            )
-            ->setResetToken(null)
-            ->setResetTokenExpires(null);
-
-
-
-        $this->entityManager->flush();
+    foreach ($user->getRoleAssignments() as $assignment) {
+        if (in_array(
+            $assignment->getRole(),
+            $allowedRoles,
+            true
+        )) {
+            $isEligible = true;
+            break;
+        }
     }
 
+    if (!$isEligible) {
+        return [
+            'sent' => false,
+        ];
+    }
+
+    /*
+     * Generate cryptographically secure reset token.
+     */
+    $plainToken = bin2hex(
+        random_bytes(32)
+    );
+
+    /*
+     * Store only the hash.
+     */
+    $hashedToken = hash(
+        'sha256',
+        $plainToken
+    );
+
+    /*
+     * Token valid for one hour.
+     */
+    $expiresAt = new \DateTimeImmutable(
+        '+1 hour'
+    );
+
+    $user
+        ->setResetToken($hashedToken)
+        ->setResetTokenExpires($expiresAt);
+
+    $this->entityManager->flush();
+
+    return [
+        'sent' => true,
+        'user' => $user,
+        'token' => $plainToken,
+        'expiresAt' => $expiresAt,
+    ];
+}
+
+
+
+
+/**
+ * Reset an administrator password using a valid reset token.
+ *
+ * @throws \RuntimeException
+ */
+public function resetPassword(
+    string $token,
+    string $newPassword
+): User {
+    $token = trim($token);
+
+    if ($token === '') {
+        throw new \RuntimeException(
+            'Invalid or expired reset token.'
+        );
+    }
+
+    if ($newPassword === '') {
+        throw new \RuntimeException(
+            'New password is required.'
+        );
+    }
+
+    /*
+     * Validate password strength here according to your
+     * application's password policy.
+     */
+    if (strlen($newPassword) < 8) {
+        throw new \RuntimeException(
+            'Password must contain at least 8 characters.'
+        );
+    }
+
+    /*
+     * Hash the supplied token exactly the same way it was
+     * hashed when the reset request was created.
+     */
+    $hashedToken = hash(
+        'sha256',
+        $token
+    );
+
+    /*
+     * Find the account using the hashed token.
+     */
+    $user = $this->userRepository
+        ->createQueryBuilder('u')
+        ->innerJoin('u.roleAssignments', 'roleAssignment')
+        ->andWhere('u.resetToken = :token')
+        ->andWhere('u.resetTokenExpires > :now')
+        ->andWhere('roleAssignment.role IN (:roles)')
+        ->setParameter('token', $hashedToken)
+        ->setParameter(
+            'now',
+            new \DateTimeImmutable()
+        )
+        ->setParameter(
+            'roles',
+            [
+                UserRole::USER->value,
+                UserRole::SUPER_ADMIN->value,
+            ]
+        )
+        ->setMaxResults(1)
+        ->getQuery()
+        ->getOneOrNullResult();
+
+    if (!$user) {
+        throw new \RuntimeException(
+            'Invalid or expired reset token.'
+        );
+    }
+
+    /*
+     * Hash using Symfony's configured password hasher.
+     */
+    $hashedPassword = $this->passwordHasher->hashPassword(
+        $user,
+        $newPassword
+    );
+
+    /*
+     * Update credentials and invalidate the reset token.
+     */
+    $user
+        ->setPassword($hashedPassword)
+        ->setResetToken(null)
+        ->setResetTokenExpires(null)
+
+        /*
+         * Reset login protection state.
+         */
+        ->setFailedLoginAttempts(0)
+        ->setLockUntil(null);
+
+    $this->entityManager->flush();
+
+    return $user;
+}
 
 
 

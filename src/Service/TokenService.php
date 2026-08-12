@@ -9,20 +9,6 @@ use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 
 /**
  * Ports the token helpers from the top of controllers/UserController.js:
- *
- *   const signAccessToken = (user) => jwt.sign({id, roles}, JWT_SECRET, {expiresIn: "15m"})
- *   const signRefreshToken = (user) => jwt.sign({id}, REFRESH_TOKEN_SECRET, {expiresIn: "7d"})
- *
- * Kept as two DIFFERENT signing mechanisms on purpose, matching the Node
- * app's use of two separate secrets - access tokens go through Lexik
- * (RSA keypair, config/packages/lexik_jwt_authentication.yaml), refresh
- * tokens are signed directly with firebase/php-jwt against a plain HMAC
- * secret (REFRESH_TOKEN_SECRET), same as Node's jsonwebtoken call.
- *
- * NOTE: this bypasses Lexik's automatic json_login success handler
- * entirely, since tokens here are set as cookies with custom claims, not
- * returned as a Bearer token in the response body. See PHASE4_NOTES.md
- * for the follow-up needed on the `api`/`admin` firewalls in security.yaml.
  */
 class TokenService
 {

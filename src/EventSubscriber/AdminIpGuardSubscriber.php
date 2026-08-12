@@ -7,7 +7,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\RateLimiter\RateLimiterFactory;
 
 /**
  * Replaces middlewares/AdminIPGuard.js's `adminIPGuard`.
@@ -22,8 +21,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 class AdminIpGuardSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        #[Autowire(service: 'limiter.allowed_ips')]
-        private readonly RateLimiterFactory $allowedIps,
+    #[Autowire('%env(ALLOWED_IPS)%')]
+    private readonly string $allowedIps,
     ) {
     }
 
@@ -39,10 +38,7 @@ class AdminIpGuardSubscriber implements EventSubscriberInterface
         if (!str_starts_with($request->getPathInfo(), '/api/admin')) {
             return;
         }
-
-        // Node's checkAdminIP handler (GET /check-ip) is a diagnostic
-        // endpoint, not itself IP-gated - mirrored by the security.yaml
-        // access_control PUBLIC_ACCESS rule for it, not here.
+        
         if (empty(trim($this->allowedIps))) {
             return; // No allow-list configured - matches Node behavior of an empty ALLOWED_IPS
         }

@@ -168,9 +168,6 @@ class RefreshTokenService
 
 
 
-
-
-
     /**
      * Rotate refresh token
      *

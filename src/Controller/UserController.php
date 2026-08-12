@@ -3,16 +3,23 @@
 namespace App\Controller;
 
 use App\Repository\UserRepository;
+use App\Entity\User;
 use App\Service\OTPService;
+use App\Service\EmailService;
 use App\Service\TokenService;
 use App\Service\UserService;
 use App\Service\CookieService;
 use App\Service\RefreshTokenService;
+use App\Service\VerificationSessionService;
+use App\Service\ActivityLogService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
+
 
 #[Route('/api/user')]
 class UserController extends AbstractController
@@ -25,6 +32,9 @@ class UserController extends AbstractController
         private readonly RefreshTokenService $refreshTokenService,
         private readonly CookieService $cookieService,
         private readonly UserRepository $userRepository,
+        private readonly ActivityLogService $activityLogService,
+        private readonly EmailService $emailService,
+        private readonly VerificationSessionService $verificationService
     ) {
     }
 
@@ -37,7 +47,7 @@ class UserController extends AbstractController
      * Node:
      * registerUser()
      */
-    #[Route('/register', methods:['POST'])]
+    #[Route('/register', name: 'user_register', methods:['POST'])]
     public function register(
         Request $request
     ): JsonResponse {
@@ -62,17 +72,21 @@ class UserController extends AbstractController
 
 
 
+            $verificationToken =
+                $this->verificationService
+                ->create($user);
+
+
             $otp=$this->otpService->generate($user);
 
 
+            $this->emailService->sendOTP(
+                $user,
+                $otp
+            );
 
-            /**
-             * Email sending service
-             * will be added next
-             */
 
-
-            return $this->json([
+            $response = $this->json([
 
                 'success'=>true,
 
@@ -80,10 +94,35 @@ class UserController extends AbstractController
 
                 'redirect'=>'/verify-otp',
 
-                'userId'=>$user->getId()
+            ]);
 
-            ],200);
 
+            $response->headers->setCookie(
+                new Cookie(
+                    'verify_session',
+                    $verificationToken,
+                    time()+900,
+                    '/',
+                    null,
+                    true,
+                    true,
+                    false,
+                    'None'
+                )
+            );
+
+                          /*
+         * Activity log.
+         */
+        $this->activityLogService->log(
+            user: $user,
+            action: 'USER_REGISTERED_SUCCESSFULLY',
+            description: sprintf(
+                '%s User account registered successfully and redirected to verification.',
+                $user->getEmail()
+            )
+        );
+            return $response;
 
 
         }catch(\Throwable $e){
@@ -114,91 +153,148 @@ class UserController extends AbstractController
      * Node:
      * loginUser()
      */
-    #[Route('/login', methods:['POST'])]
-    public function login(
-        Request $request
-    ): JsonResponse {
+#[Route('/login', name: 'user_login', methods:['POST'])]
+public function login(
+    Request $request
+): JsonResponse {
 
 
-        try {
+    try {
 
 
-            $data=json_decode(
-                $request->getContent(),
-                true
-            );
+        $data=json_decode(
+            $request->getContent(),
+            true
+        );
+ 
 
-
-            $user=$this->userService->login(
-                $data['email'],
-                $data['password']
-            );
-
-
-
-            $accessToken=
-                $this->tokenService
-                ->signAccessToken($user);
+        $user=$this->userService->login(
+            $data['email'],
+            $data['password']
+        );
 
 
 
-            $refreshToken=
-                $this->refreshTokenService
-                ->create($user);
+        /**
+         * User registered but never verified
+                */
+        if(!$user->isVerified()){
+
+
+            $verificationToken =
+                $this->verificationService
+                ->refresh($user);
+
+
+
+            $otp=$this->otpService
+                ->generate($user);
+
+
+
+            $this->emailService
+                ->sendOTP(
+                    $user,
+                    $otp
+                );
 
 
 
             $response=$this->json([
 
-                'success'=>true,
+                'success'=>false,
 
-                'message'=>'Login successful',
+                'message'=>'Email verification required',
 
-                'userId'=>$user->getId(),
+                'redirect'=>'/verify-otp',
 
-                'roles'=>$user->getRoles()
-
-            ]);
+            ],403);
 
 
 
-            /**
-             * HTTP ONLY COOKIES
-             */
-            $this->cookieService
-                ->setAccessToken(
-                    $response,
-                    $accessToken
-                );
-
-
-            $this->cookieService
-                ->setRefreshToken(
-                    $response,
-                    $refreshToken
-                );
-
+            $response->headers->setCookie(
+                new Cookie(
+                    'verify_session',
+                    $verificationToken,
+                    time()+900,
+                    '/',
+                    null,
+                    true,
+                    true,
+                    false,
+                    'None'
+                )
+            );
 
 
             return $response;
 
-
-
-        }catch(\Throwable $e){
-
-
-            return $this->json([
-
-                'success'=>false,
-
-                'message'=>$e->getMessage()
-
-            ],401);
-
         }
+
+
+        $accessToken =
+            $this->tokenService
+            ->signAccessToken($user);
+
+
+        $refreshToken =
+            $this->refreshTokenService
+            ->create($user);
+
+        $response=$this->json([
+
+            'success'=>true,
+
+            'message'=>'Login successful',
+
+            'roles'=>$user->getRoles()
+
+        ]);
+
+
+
+        $this->cookieService
+            ->setAuthCookies(
+                $response,
+                $accessToken,
+                $refreshToken
+            );
+
+                      /*
+         * Activity log.
+         */
+        $this->activityLogService->log(
+            user: $user,
+            action: 'USER_LOGIN_SUCCESSFULLY',
+            description: sprintf(
+                'Login successfully by %s.',
+                $user->getEmail()
+            )
+        );
+
+        $this->emailService
+            ->sendWelcome(
+                $user
+            );
+
+        return $response;
+
+
+
+    }catch(\Throwable $e){
+
+
+        return $this->json([
+
+            'success'=>false,
+
+            'message'=>$e->getMessage()
+
+        ],401);
 
     }
 
+}
 
 
 
@@ -213,7 +309,7 @@ class UserController extends AbstractController
      * Node:
      * verifyOTP()
      */
-    #[Route('/verify-otp', methods:['POST'])]
+    #[Route('/verify-otp', name: 'user_verify_otp', methods:['POST'])]
     public function verifyOTP(
         Request $request
     ): JsonResponse {
@@ -227,10 +323,10 @@ class UserController extends AbstractController
 
 
 
-        $user=$this->userRepository
-            ->find(
-                $data['userId']
-            );
+        $token = $request->cookies->get('verify_session');
+
+        $user = $this->verificationService
+             ->findUserByToken($token);
 
 
 
@@ -269,7 +365,6 @@ class UserController extends AbstractController
 
 
 
-
         $accessToken=
             $this->tokenService
             ->signAccessToken($user);
@@ -281,6 +376,11 @@ class UserController extends AbstractController
             ->create($user);
 
 
+                $this->emailService
+            ->sendWelcome(
+                $user
+            );
+
 
 
         $response=$this->json([
@@ -288,6 +388,8 @@ class UserController extends AbstractController
             'success'=>true,
 
             'message'=>'Email verified successfully',
+
+            'redirect' => '/',
 
             'user'=>[
 
@@ -300,22 +402,35 @@ class UserController extends AbstractController
         ]);
 
 
+        $this->verificationService
+             ->delete($token);
+
+        $response->headers->clearCookie(
+            'verify_session',
+            '/',
+            null
+        );
+
 
 
         $this->cookieService
-            ->setAccessToken(
+            ->setAuthCookies(
                 $response,
-                $accessToken
-            );
-
-
-        $this->cookieService
-            ->setRefreshToken(
-                $response,
+                $accessToken,
                 $refreshToken
             );
 
-
+          /*
+         * Activity log.
+         */
+        $this->activityLogService->log(
+            user: $user,
+            action: 'USER_VERIFIED_OTP_SUCCESSFULLY',
+            description: sprintf(
+                'OTP verified successfully by %s.',
+                $user->getEmail()
+            )
+        );
 
         return $response;
 
@@ -336,7 +451,7 @@ class UserController extends AbstractController
      * Node:
      * resendOTP()
      */
-    #[Route('/resend-otp', methods:['POST'])]
+    #[Route('/resend-otp', name: 'user_resend_otp', methods:['POST'])]
     public function resendOTP(
         Request $request
     ): JsonResponse {
@@ -348,10 +463,10 @@ class UserController extends AbstractController
         );
 
 
-        $user=$this->userRepository
-            ->find(
-                $data['userId']
-            );
+        $token = $request->cookies->get('verify_session');
+
+        $user = $this->verificationService
+             ->findUserByToken($token);
 
 
         if(!$user){
@@ -372,6 +487,25 @@ class UserController extends AbstractController
         $otp=$this->otpService
             ->resend($user);
 
+        
+        $this->emailService
+            ->sendOTP(
+                $user,
+                $otp
+            );
+
+
+                    /*
+         * Activity log.
+         */
+        $this->activityLogService->log(
+            user: $user,
+            action: 'USER_REQUEST_RESEND_OTP',
+            description: sprintf(
+                'OTP resend to %s.',
+                $user->getEmail()
+            )
+        );
 
 
         return $this->json([
@@ -390,152 +524,288 @@ class UserController extends AbstractController
 
 
 
+#[Route('/forgot-password', name: 'user_forgot_password', methods: ['POST'])]
+public function forgotPassword(
+    Request $request
+): JsonResponse {
+    $data = json_decode(
+        $request->getContent(),
+        true
+    );
+
+    $email = strtolower(
+        trim($data['email'] ?? '')
+    );
+
+    if ($email === '') {
+        return $this->json([
+            'message' => 'Email is required.',
+        ], Response::HTTP_BAD_REQUEST);
+    }
+
+    try {
+
+        /*
+         * Generate and store the reset token.
+         */
+        $result = $this->userService
+            ->requestPasswordReset($email);
+
+        /*
+         * Only send an email when a valid user
+         * account was found.
+         */
+        if ($result['sent'] === true) {
+
+            $resetLink = sprintf(
+                '%s/auth/reset-password/%s',
+                rtrim(
+                    $this->frontendUrl,
+                    '/'
+                ),
+                $result['token']
+            );
+
+            /*
+             * Send password reset email.
+             */
+            $this->emailService
+                ->sendUserPasswordReset(
+                    $result['user'],
+                    $resetLink,
+                    $result['expiresAt']
+                );
+
+            /*
+             * Activity log.
+             */
+            $this->activityLogService->log(
+                user: $result['user'],
+                action: 'REQUEST_USER_RESET_PASSWORD',
+                description: sprintf(
+                    'User password reset email sent to %s.',
+                    $result['user']->getEmail()
+                )
+            );
+        }
+
+        /*
+         * Do not reveal whether the account exists.
+         */
+        return $this->json([
+            'message' =>
+                'If an account exists for that email, '
+                . 'a password reset link has been sent.',
+        ]);
+
+    } catch (\Throwable $e) {
+
+        /*
+         * Log the failure.
+         */
+        try {
+
+            $this->activityLogService->log(
+                user: null,
+                action: 'REQUEST_USER_RESET_PASSWORD_FAILED',
+                description: sprintf(
+                    'Failed to process user password reset request for %s. Error: %s',
+                    $email,
+                    $e->getMessage()
+                )
+            );
+
+        } catch (\Throwable $logException) {
+            /*
+             * Never allow logging to mask
+             * the original exception.
+             */
+        }
+
+        return $this->json([
+            'message' =>
+                'Unable to process password reset request.',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+}
 
 
-    /**
-     * FORGOT PASSWORD
-     */
-    #[Route('/forgot-password', methods:['POST'])]
-    public function forgotPassword(
+
+
+
+#[Route('/reset-password/{token}', name: 'admin_reset_password', methods: ['POST'])]
+public function resetPassword(
+    string $token,
+    Request $request
+): JsonResponse {
+    $data = json_decode(
+        $request->getContent(),
+        true
+    );
+
+    $newPassword = $data['newPassword'] ?? '';
+
+    if ($newPassword === '') {
+        return $this->json([
+            'message' => 'New password is required.',
+        ], Response::HTTP_BAD_REQUEST);
+    }
+
+    try {
+
+        $user = $this->userService->resetPassword(
+            $token,
+            $newPassword
+        );
+
+        /*
+         * Log successful reset here if your existing
+         * ActivityLog architecture is available.
+         */
+
+        return $this->json([
+            'message' => 'Password reset successful.',
+        ]);
+
+    } catch (\RuntimeException $e) {
+
+        return $this->json([
+            'message' => $e->getMessage(),
+        ], Response::HTTP_BAD_REQUEST);
+
+    } catch (\Throwable $e) {
+
+        return $this->json([
+            'message' => 'Unable to reset password.',
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+}
+
+
+
+
+
+    #[Route('/me', name: 'user_me', methods:['GET'])]
+    public function me(
+        #[CurrentUser] ?User $user
+    ): JsonResponse {
+
+        if (!$user) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        return $this->json([
+            'success' => true,
+            'user' => [
+                'id' => $user->getId(),
+                'name' => $user->getName(),
+                'email' => $user->getEmail(),
+                'roles' => $user->getRoles(),
+                'avatar' => $user->getAvatar(),
+                'verified' => $user->isVerified()
+            ]
+        ]);
+    }
+
+
+
+    #[Route('/refresh-token', name: 'user_refresh_token', methods:['POST'])]
+    public function refreshToken(
         Request $request
     ): JsonResponse {
 
 
-        $data=json_decode(
-            $request->getContent(),
-            true
-        );
+        $rawToken = $request
+            ->cookies
+            ->get('userRefreshToken');
 
 
-
-        $user=$this->userRepository
-            ->findOneBy([
-                'email'=>$data['email']
-            ]);
-
-
-
-        if(!$user){
+        if(!$rawToken){
 
             return $this->json([
-
                 'success'=>false,
-
-                'message'=>'User not found'
-
-            ],404);
+                'message'=>'Refresh token missing'
+            ],401);
 
         }
 
 
 
+        $storedToken =
+            $this->refreshTokenService
+            ->validate($rawToken);
 
-        $token=
-            $this->userService
-            ->createPasswordResetToken(
-                $user
+
+
+        if(!$storedToken){
+
+            return $this->json([
+                'success'=>false,
+                'message'=>'Invalid refresh token'
+            ],401);
+
+        }
+
+
+
+        $user =
+            $storedToken->getUser();
+
+
+
+        // rotate token
+        $newRefreshToken =
+            $this->refreshTokenService
+            ->rotate($storedToken);
+
+
+
+        $newAccessToken =
+            $this->tokenService
+            ->signAccessToken($user);
+
+
+
+        $response=$this->json([
+
+            'success'=>true,
+
+            'message'=>'Token refreshed'
+
+        ]);
+
+
+
+        $this->cookieService
+            ->setAuthCookies(
+                $response,
+                $newAccessToken,
+                $newRefreshToken
             );
 
 
 
-        /**
-         * Email reset link later
-         */
-
-
-        return $this->json([
-
-            'success'=>true,
-
-            'message'=>'Password reset link sent'
-
-        ]);
+        return $response;
 
     }
 
 
 
 
-
-
-
-
-
-    /**
-     * RESET PASSWORD
-     */
-    #[Route('/reset-password/{token}', methods:['POST'])]
-    public function resetPassword(
-        string $token,
-        Request $request
-    ): JsonResponse {
-
-
-        $data=json_decode(
-            $request->getContent(),
-            true
-        );
-
-
-
-        $user=$this->userRepository
-            ->findOneBy([
-                'resetToken'=>$token
-            ]);
-
-
-
-        if(!$user){
-
-            return $this->json([
-
-                'success'=>false,
-
-                'message'=>'Invalid token'
-
-            ],400);
-
-        }
-
-
-
-
-        if(
-            !$user->getResetTokenExpires()
-            ||
-            $user->getResetTokenExpires()
-            <
-            new \DateTimeImmutable()
-        ){
-
-            return $this->json([
-
-                'success'=>false,
-
-                'message'=>'Token expired'
-
-            ],400);
-
-        }
-
-
-
-        $this->userService
-            ->resetPassword(
-                $user,
-                $data['password']
-            );
-
-
-
-        return $this->json([
-
-            'success'=>true,
-
-            'message'=>'Password reset successful'
-
+    #[Route('/logout', name: 'user_logout', methods:['POST'])]
+    public function logout(Request $request): JsonResponse
+    {
+        $response = new JsonResponse([
+            'success' => true,
+            'message' => 'Logged out successfully'
         ]);
 
+        $this->cookieService->clearAuthCookies($response);
+
+        return $response;
     }
 
 }

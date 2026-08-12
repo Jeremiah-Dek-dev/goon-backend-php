@@ -15,7 +15,7 @@ security:
             # Ensure dev tools and static assets are always allowed
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
-        main:
+        api:
             lazy: true
             stateless: true
             provider: app_user_provider
@@ -49,16 +49,98 @@ security:
         - { path: ^/api/user/forgot-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/user/reset-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/user/google, roles: PUBLIC_ACCESS }
+        - { path: ^/api/user/refresh-token, roles: PUBLIC_ACCESS }
+        - { path: ^/api/rides/search, roles: PUBLIC_ACCESS }
+        - { path: ^/api/rides/rideCounts, roles: PUBLIC_ACCESS }
 
+        - { path: ^/api/driver/register, roles: PUBLIC_ACCESS }
+        - { path: ^/api/driver/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/driver/form-submitted, roles: PUBLIC_ACCESS }
+        - { path: ^/api/driver/refresh-token, roles: PUBLIC_ACCESS }
+
+
+        - { path: ^/api/admin/register, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/verify-captcha-hold, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/form-submitted, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/refresh-token, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/verify-otp, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/resend-otp, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/forgot-password, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/reset-password, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/accept-invite, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/accept-invite/:token, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/verify-2fa, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/setup-2fa, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/verify-backup-code, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/regenerate-backup-codes, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/csrf-token, roles: PUBLIC_ACCESS}
+        - { path: ^/api/admin/verify-csrf-token, roles: PUBLIC_ACCESS}
+        
 
         # Authenticated user routes
         - { path: ^/api/user/me, roles: ROLE_USER }
         - { path: ^/api/user/logout, roles: ROLE_USER }
         - { path: ^/api/user/update-token, roles: ROLE_USER }
 
+        # Authenticated driver routes
+        - { path: ^/api/driver/me, roles: ROLE_DRIVER }
+        - { path: ^/api/driver/logout, roles: ROLE_DRIVER }
+        - { path: ^/api/driver/add, roles: ROLE_DRIVER }
+        - { path: ^/api/driver/commission-rate, roles: ROLE_DRIVER}
+        - { path: ^/api/driver/rides, roles: ROLE_DRIVER}
+        - { path: ^/api/driver/rides/id, roles: ROLE_DRIVER}
+
+        # Authenticated admin routes
+        - { path: ^/api/admin/me, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/logout, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/update-token, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/settings, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/:id, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/activity-logs, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/finance, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/stats, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/invite, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/invite, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/profile/avatar, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/profile/change-password, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/profile/delete, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/invite, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/bookings, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/monthly-revenue, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/booking-status, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/monthly-bookings, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/commission, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/global-update, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/push-to-drivers, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/push-to-users, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/push-to-admins, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/push-promo, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/push-new-driver, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/rides, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/rides/id, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/assign-ride, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/rides/id/status, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/add, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/list, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/search, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/remove, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/drivers, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/drivers/approve/driverId, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/drivers, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/add-driver, roles: ROLE_ADMIN}
+        - { path: ^/api/admin/drivers/id, roles: ROLE_ADMIN}
+
+
 
         # Everything else under user API
         - { path: ^/api/user, roles: ROLE_USER }
+
+        # Everything else under driver API
+        - { path: ^/api/driver, roles: ROLE_DRIVER }
+
+        # Everything else under admin API
+        - { path: ^/api/admin, roles: ROLE_ADMIN }
 
 when@test:
     security:
